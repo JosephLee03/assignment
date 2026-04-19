@@ -1,0 +1,57 @@
+name,group,description
+ret_1m,price_return,1-minute return
+ret_3m,price_return,3-minute return
+ret_5m,price_return,5-minute return
+ret_10m,price_return,10-minute return
+ret_15m,price_return,15-minute return
+ret_30m,price_return,30-minute return
+ret_60m,price_return,60-minute return
+mom_5m,momentum,5-minute momentum
+mom_15m,momentum,15-minute momentum
+mom_30m,momentum,30-minute momentum
+rev_3m,reversal,3-minute reversal
+rev_5m,reversal,5-minute reversal
+acc_mom_5_15,momentum,Acceleration of momentum
+ema_gap_5_20,trend,EMA(5) vs EMA(20) gap
+ema_gap_10_30,trend,EMA(10) vs EMA(30) gap
+ma_slope_10,trend,Slope proxy of MA(10)
+ma_slope_30,trend,Slope proxy of MA(30)
+price_z20,trend,"Price z-score, 20 bars"
+price_z60,trend,"Price z-score, 60 bars"
+boll_pos_20,trend,Bollinger position (20)
+vol_5m,volatility,5-minute realized volatility
+vol_15m,volatility,15-minute realized volatility
+vol_20m,volatility,20-minute realized volatility
+vol_30m,volatility,30-minute realized volatility
+vol_60m,volatility,60-minute realized volatility
+vol_of_vol_30,volatility,Volatility of volatility
+downside_vol_20,volatility,Downside volatility
+upside_vol_20,volatility,Upside volatility
+up_down_vol_ratio_20,volatility,Upside/downside vol ratio
+ret_skew_30,volatility,Rolling skewness of returns
+ret_kurt_30,volatility,Rolling kurtosis of returns
+range_proxy_15,volatility,Rolling close range proxy
+vol_regime_20_60,volatility,Volatility regime ratio
+volume_z20,volume,"Volume z-score, 20 bars"
+volume_z60,volume,"Volume z-score, 60 bars"
+volume_ma_ratio_5_20,volume,Volume MA ratio
+volume_chg_1,volume,"Volume change, 1 bar"
+volume_chg_5,volume,"Volume change, 5 bars"
+turnover_z20,turnover,"Turnover z-score, 20 bars"
+turnover_z60,turnover,"Turnover z-score, 60 bars"
+turnover_ma_ratio_5_20,turnover,Turnover MA ratio
+illiq_1m,liquidity,One-bar illiquidity proxy
+amihud_20,liquidity,"Amihud proxy, 20 bars"
+pv_corr_20,liquidity,Price-volume correlation
+signed_volume_z20,liquidity,Signed volume z-score
+oi_delta,open_interest,Open interest difference
+oi_z20,open_interest,"OI delta z-score, 20 bars"
+oi_z60,open_interest,"OI delta z-score, 60 bars"
+oi_trend_10,open_interest,"OI trend proxy, 10 bars"
+oi_trend_30,open_interest,"OI trend proxy, 30 bars"
+oi_volume_ratio,open_interest,OI over volume ratio
+sin_tod,time,Intraday seasonality sine
+cos_tod,time,Intraday seasonality cosine
+minute_norm,time,Normalized minute of day
+is_open_30m,time,First 30 minutes flag
+is_close_30m,time,Last 30 minutes flag

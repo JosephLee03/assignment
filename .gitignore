@@ -11,6 +11,3 @@ venv/
 # OS/editor
 .DS_Store
 Thumbs.db
-
-# Local artifacts
-outputs/
