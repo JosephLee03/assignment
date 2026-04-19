@@ -1,14 +1,20 @@
-# Factor Library Standalone Report (20260419_160547)
+# Factor Library Standalone Report (20260419_163015)
 
 ## Universe
 - trading_days: 243
 - date_range: 20250102 ~ 20251231
+- in_sample_days: 182
+- out_of_sample_days: 61
+- oos_range: 20250930 ~ 20251231
 - factor_count: 56
 - ic_method: pearson
+- oos_policy: latest_3_calendar_months
 - signal_rule: rolling_63_days_quantile, long>= 0.995, short<= 0.005
 - annualization_days: 252
 - average_sharpe_without_cost: -1.227757
 - average_sharpe_with_cost: -11.194394
+- average_sharpe_without_cost_oos: -1.189138
+- average_sharpe_with_cost_oos: -12.149710
 
 ## Top10 Sharpe (without cost)
 
@@ -54,3 +60,18 @@
 | acc_mom_5_15 | momentum | 0.7970 | 0.4938 | 0.1058% | -640.00 |
 | minute_norm | time | 1.1311 | 0.4935 | 0.1058% | -820.00 |
 | oi_delta | open_interest | 0.9276 | 0.4931 | 0.1079% | -1340.00 |
+
+## Top10 OOS Sharpe (without cost)
+
+| factor | group | sharpe_wo_cost | ir_wo_cost | annual_return_wo_cost | mdd_wo_cost |
+|---|---|---:|---:|---:|---:|
+| rev_3m | reversal | 6.0367 | 0.9643 | 0.2812% | -100.00 |
+| rev_5m | reversal | 5.1114 | 0.9583 | 0.1571% | -20.00 |
+| oi_volume_ratio | open_interest | 4.1243 | 0.9578 | 0.1488% | -40.00 |
+| turnover_ma_ratio_5_20 | turnover | 3.7798 | 0.9601 | 0.1984% | -160.00 |
+| volume_ma_ratio_5_20 | volume | 3.6248 | 0.9597 | 0.1902% | -160.00 |
+| downside_vol_20 | volatility | 3.6103 | 0.9555 | 0.0992% | -100.00 |
+| sin_tod | time | 3.4076 | 0.9627 | 0.2398% | -240.00 |
+| volume_chg_5 | volume | 1.9238 | 0.9561 | 0.1157% | -180.00 |
+| illiq_1m | liquidity | 1.7936 | 0.9649 | 0.3806% | -540.00 |
+| turnover_z20 | turnover | 1.7339 | 0.9559 | 0.1075% | -280.00 |
