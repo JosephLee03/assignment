@@ -20,6 +20,7 @@ It does not import modules outside this folder.
 ## Backtest Method (Optimized)
 
 - IC method: `pearson` (supports alias `person` in CLI)
+- Evaluation split: latest 3 calendar months are held out as OOS (default `--oos-months 3`)
 - Signal rule: rolling 3-month window (`63` trading days)
   - long threshold: `0.995` quantile
   - short threshold: `0.005` quantile
@@ -44,11 +45,12 @@ python run_submission.py --data-root <PATH_TO_DATA_ROOT> --output-dir ./outputs
 Example with explicit parameters:
 
 ```bash
-python run_submission.py --data-root ../../../data/CZCE/sa --output-dir ./outputs --ic-method person --rolling-window-days 63 --long-quantile 0.995 --short-quantile 0.005
+python run_submission.py --data-root ../../../data/CZCE/sa --output-dir ./outputs --ic-method person --rolling-window-days 63 --long-quantile 0.995 --short-quantile 0.005 --oos-months 3
 ```
 
 Notes:
 - `run_submission.py` validates symmetric quantiles: `long_quantile + short_quantile = 1.0`.
+- IC/correlation selection is computed on in-sample data; OOS is used for out-of-sample performance reporting.
 - `run_submission.py` will auto-try common project layouts if `--data-root` is wrong.
 - tqdm progress is shown by default.
 
@@ -66,8 +68,10 @@ outputs/
     factor_high_corr_pairs.csv
     factor_selection.json
     factor_backtest_metrics.csv
+    factor_backtest_metrics_oos.csv
     factor_group_metrics.csv
     top10_sharpe_without_cost.csv
+    top10_sharpe_without_cost_oos.csv
     top10_annualized_return_without_cost.csv
     top10_information_ratio_without_cost.csv
     README_FINAL_RESULTS.md
@@ -97,19 +101,24 @@ In `factor_backtest_metrics.csv`, each factor includes:
 - `information_ratio_without_cost`
 - corresponding `*_with_cost` fields
 
+In `factor_backtest_metrics_oos.csv`, OOS metrics are provided with `_oos` suffix columns.
+
 ### 4) Detailed Final Readme for This Run
 
 - `README_FINAL_RESULTS.md` includes:
   - data range and factor count
+  - in-sample/OOS split range and OOS months
   - method settings (`pearson`, rolling quantile thresholds)
-  - average sharpe (with/without cost)
+  - average sharpe (with/without cost, full sample and OOS)
   - Top10 tables by Sharpe / Annualized Return / Information Ratio
+  - Top10 OOS Sharpe table
 
 ### 5) Quick Summary File
 
 `run_summary.json` includes:
 - run range and factor count
-- average Sharpe (with/without cost)
-- average annualized return (with/without cost)
+- in-sample/OOS day counts and OOS range
+- average Sharpe (with/without cost, full sample and OOS)
+- average annualized return (with/without cost, full sample and OOS)
 - selected factor count and max selected correlation
 - resolved output path and generated file paths

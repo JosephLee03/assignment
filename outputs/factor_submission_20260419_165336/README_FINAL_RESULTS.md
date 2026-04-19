@@ -1,4 +1,4 @@
-# Factor Library Standalone Report (20260419_163015)
+# Factor Library Standalone Report (20260419_165336)
 
 ## Universe
 - trading_days: 243
@@ -15,6 +15,12 @@
 - average_sharpe_with_cost: -11.194394
 - average_sharpe_without_cost_oos: -1.189138
 - average_sharpe_with_cost_oos: -12.149710
+
+## Correlation matrix (maximal correlation is 0.5)
+
+- selected_factors_max_abs_correlation: 0.479860
+- full_matrix_file: factor_corr_matrix.csv
+- selected_matrix_file: selected_factor_corr_matrix.csv
 
 ## Top10 Sharpe (without cost)
 
@@ -75,3 +81,18 @@
 | volume_chg_5 | volume | 1.9238 | 0.9561 | 0.1157% | -180.00 |
 | illiq_1m | liquidity | 1.7936 | 0.9649 | 0.3806% | -540.00 |
 | turnover_z20 | turnover | 1.7339 | 0.9559 | 0.1075% | -280.00 |
+
+## Top10 OOS Sharpe (without cost) Correlation Matrix
+
+| factor | rev_3m | rev_5m | oi_volume_ratio | turnover_ma_ratio_5_20 | volume_ma_ratio_5_20 | downside_vol_20 | sin_tod | volume_chg_5 | illiq_1m | turnover_z20 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| rev_3m | 1.000 | 0.741 | -0.018 | 0.001 | 0.002 | 0.134 | 0.010 | -0.015 | -0.173 | 0.003 |
+| rev_5m | 0.741 | 1.000 | -0.020 | 0.003 | 0.006 | 0.174 | 0.013 | -0.031 | -0.125 | -0.002 |
+| oi_volume_ratio | -0.018 | -0.020 | 1.000 | -0.040 | -0.040 | -0.030 | -0.092 | -0.004 | 0.030 | -0.134 |
+| turnover_ma_ratio_5_20 | 0.001 | 0.003 | -0.040 | 1.000 | 1.000 | -0.007 | 0.010 | 0.061 | 0.000 | 0.530 |
+| volume_ma_ratio_5_20 | 0.002 | 0.006 | -0.040 | 1.000 | 1.000 | -0.006 | 0.010 | 0.061 | -0.000 | 0.530 |
+| downside_vol_20 | 0.134 | 0.174 | -0.030 | -0.007 | -0.006 | 1.000 | 0.016 | 0.005 | 0.006 | -0.034 |
+| sin_tod | 0.010 | 0.013 | -0.092 | 0.010 | 0.010 | 0.016 | 1.000 | -0.002 | -0.006 | -0.001 |
+| volume_chg_5 | -0.015 | -0.031 | -0.004 | 0.061 | 0.061 | 0.005 | -0.002 | 1.000 | -0.000 | 0.049 |
+| illiq_1m | -0.173 | -0.125 | 0.030 | 0.000 | -0.000 | 0.006 | -0.006 | -0.000 | 1.000 | -0.008 |
+| turnover_z20 | 0.003 | -0.002 | -0.134 | 0.530 | 0.530 | -0.034 | -0.001 | 0.049 | -0.008 | 1.000 |

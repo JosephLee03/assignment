@@ -6,6 +6,61 @@ import numpy as np
 import pandas as pd
 
 
+def _prepare_numeric_pair(x: pd.Series, y: pd.Series) -> tuple[np.ndarray, np.ndarray]:
+    pair = pd.concat(
+        [
+            pd.to_numeric(x, errors="coerce"),
+            pd.to_numeric(y, errors="coerce"),
+        ],
+        axis=1,
+        ignore_index=True,
+    )
+    pair = pair.replace([np.inf, -np.inf], np.nan).dropna()
+    if pair.empty:
+        return np.array([], dtype=float), np.array([], dtype=float)
+    return pair.iloc[:, 0].to_numpy(dtype=float), pair.iloc[:, 1].to_numpy(dtype=float)
+
+
+def _safe_pearson_from_arrays(arr_x: np.ndarray, arr_y: np.ndarray) -> float:
+    if arr_x.size < 2 or arr_y.size < 2:
+        return float("nan")
+
+    x_center = arr_x - arr_x.mean()
+    y_center = arr_y - arr_y.mean()
+    x_var = float(np.dot(x_center, x_center))
+    y_var = float(np.dot(y_center, y_center))
+    if x_var <= 0.0 or y_var <= 0.0:
+        return float("nan")
+
+    corr = float(np.dot(x_center, y_center) / np.sqrt(x_var * y_var))
+    if np.isnan(corr) or np.isinf(corr):
+        return float("nan")
+    return corr
+
+
+def _safe_correlation(x: pd.Series, y: pd.Series, method: str) -> float:
+    arr_x, arr_y = _prepare_numeric_pair(x, y)
+    if arr_x.size < 2:
+        return float("nan")
+
+    m = str(method).strip().lower()
+    if m == "pearson":
+        return _safe_pearson_from_arrays(arr_x, arr_y)
+    if m == "spearman":
+        rank_x = pd.Series(arr_x).rank(method="average").to_numpy(dtype=float)
+        rank_y = pd.Series(arr_y).rank(method="average").to_numpy(dtype=float)
+        return _safe_pearson_from_arrays(rank_x, rank_y)
+    if m == "kendall":
+        sx = pd.Series(arr_x)
+        sy = pd.Series(arr_y)
+        if sx.nunique(dropna=True) <= 1 or sy.nunique(dropna=True) <= 1:
+            return float("nan")
+        val = sx.corr(sy, method="kendall")
+        return float(val) if pd.notna(val) else float("nan")
+
+    raise ValueError(f"Unsupported correlation method: {method}")
+
+
 def compute_factor_ic(
     train_df: pd.DataFrame,
     feature_cols: List[str],
@@ -14,6 +69,7 @@ def compute_factor_ic(
 ) -> pd.DataFrame:
     rows = []
     n_total = float(len(train_df)) if len(train_df) > 0 else 1.0
+    method_norm = str(method).strip().lower()
 
     for feature in feature_cols:
         valid = train_df[["trade_day", feature, target_col]].dropna()
@@ -32,16 +88,19 @@ def compute_factor_ic(
             )
             continue
 
-        daily_ic = (
-            valid.groupby("trade_day", as_index=True)
-            .apply(lambda g: g[feature].corr(g[target_col], method=method))
-            .dropna()
-        )
+        daily_values: List[float] = []
+        for _, g in valid.groupby("trade_day", as_index=False):
+            ic_val = _safe_correlation(g[feature], g[target_col], method=method_norm)
+            if pd.notna(ic_val):
+                daily_values.append(float(ic_val))
+        daily_ic = pd.Series(daily_values, dtype=float)
+
         mean_ic = float(daily_ic.mean()) if len(daily_ic) else 0.0
         ic_std = float(daily_ic.std(ddof=0)) if len(daily_ic) else 0.0
         ic_ir = float(np.sqrt(len(daily_ic)) * mean_ic / ic_std) if ic_std > 0.0 else 0.0
         positive_ic_ratio = float((daily_ic > 0.0).mean()) if len(daily_ic) else 0.0
-        coverage = float(train_df[feature].notna().sum() / n_total)
+        feature_clean = pd.to_numeric(train_df[feature], errors="coerce").replace([np.inf, -np.inf], np.nan)
+        coverage = float(feature_clean.notna().sum() / n_total)
 
         rows.append(
             {
@@ -65,7 +124,31 @@ def compute_factor_ic(
 def compute_feature_correlation(train_df: pd.DataFrame, feature_cols: List[str]) -> pd.DataFrame:
     if not feature_cols:
         return pd.DataFrame()
-    corr = train_df[feature_cols].corr(method="pearson")
+
+    feature_df = train_df[feature_cols].apply(pd.to_numeric, errors="coerce")
+    feature_df = feature_df.replace([np.inf, -np.inf], np.nan)
+
+    # Drop near-constant columns during correlation computation to avoid divide-by-zero warnings.
+    valid_cols: List[str] = []
+    for col in feature_cols:
+        s = feature_df[col]
+        if int(s.notna().sum()) < 2:
+            continue
+        if float(s.std(ddof=0)) <= 0.0:
+            continue
+        valid_cols.append(col)
+
+    corr = pd.DataFrame(np.nan, index=feature_cols, columns=feature_cols, dtype=float)
+    for col in feature_cols:
+        corr.loc[col, col] = 1.0
+
+    for i, col_a in enumerate(valid_cols):
+        corr.loc[col_a, col_a] = 1.0
+        for col_b in valid_cols[i + 1 :]:
+            corr_val = _safe_correlation(feature_df[col_a], feature_df[col_b], method="pearson")
+            corr.loc[col_a, col_b] = corr_val
+            corr.loc[col_b, col_a] = corr_val
+
     return corr
 
 

@@ -70,6 +70,9 @@ class StandaloneConfig:
     # Annualization mapping.
     annualization_days: int = 252
 
+    # Hold out the latest N calendar months as OOS evaluation window.
+    oos_months: int = 3
+
 
 @dataclass
 class ExecutionConfig:
@@ -121,6 +124,36 @@ def _filter_days(days: Iterable[str], start_day: Optional[str], end_day: Optiona
             continue
         out.append(d)
     return out
+
+
+def _split_is_oos_days(all_days: List[str], oos_months: int) -> Tuple[List[str], List[str], Optional[str]]:
+    if not all_days:
+        return [], [], None
+
+    if oos_months <= 0:
+        return list(all_days), [], None
+
+    day_series = pd.Series(all_days, dtype="string")
+    day_dt = pd.to_datetime(day_series, format="%Y%m%d", errors="coerce")
+
+    if day_dt.isna().any():
+        fallback_days = min(len(all_days), max(1, 21 * oos_months))
+        oos_days = list(all_days[-fallback_days:])
+    else:
+        cutoff = day_dt.iloc[-1] - pd.DateOffset(months=oos_months)
+        oos_days = day_series[day_dt >= cutoff].astype(str).tolist()
+        if not oos_days:
+            fallback_days = min(len(all_days), max(1, 21 * oos_months))
+            oos_days = list(all_days[-fallback_days:])
+
+    if len(oos_days) >= len(all_days) and len(all_days) > 1:
+        keep = min(len(all_days) - 1, max(1, 21 * oos_months))
+        oos_days = list(all_days[-keep:])
+
+    oos_set = set(oos_days)
+    is_days = [d for d in all_days if d not in oos_set]
+    oos_start_day = oos_days[0] if oos_days else None
+    return is_days, oos_days, oos_start_day
 
 
 def _parse_force_flat_time(value: str) -> time:
@@ -539,14 +572,23 @@ def _build_markdown_report(
     report_path: Path,
     run_id: str,
     all_days: List[str],
+    is_days: List[str],
+    oos_days: List[str],
+    corr_df: pd.DataFrame,
     perf_df: pd.DataFrame,
     avg_sharpe_without_cost: float,
     avg_sharpe_with_cost: float,
+    avg_sharpe_without_cost_oos: float,
+    avg_sharpe_with_cost_oos: float,
+    selected_max_abs_corr: float,
     cfg: StandaloneConfig,
 ) -> None:
     top_sharpe = perf_df.sort_values("sharpe_without_cost", ascending=False).head(10)
     top_return = perf_df.sort_values("annualized_return_without_cost", ascending=False).head(10)
     top_ir = perf_df.sort_values("information_ratio_without_cost", ascending=False).head(10)
+    top_oos_sharpe = perf_df.sort_values("sharpe_without_cost_oos", ascending=False).head(10)
+    top_oos_factors = top_oos_sharpe["factor"].astype(str).tolist()
+    top_oos_corr = corr_df.reindex(index=top_oos_factors, columns=top_oos_factors) if top_oos_factors else pd.DataFrame()
 
     lines: List[str] = []
     lines.append(f"# Factor Library Standalone Report ({run_id})")
@@ -554,14 +596,28 @@ def _build_markdown_report(
     lines.append("## Universe")
     lines.append(f"- trading_days: {len(all_days)}")
     lines.append(f"- date_range: {all_days[0]} ~ {all_days[-1]}")
+    lines.append(f"- in_sample_days: {len(is_days)}")
+    lines.append(f"- out_of_sample_days: {len(oos_days)}")
+    if oos_days:
+        lines.append(f"- oos_range: {oos_days[0]} ~ {oos_days[-1]}")
     lines.append(f"- factor_count: {len(perf_df)}")
     lines.append(f"- ic_method: {cfg.ic_method}")
+    lines.append(f"- oos_policy: latest_{cfg.oos_months}_calendar_months")
     lines.append(
         f"- signal_rule: rolling_{cfg.rolling_window_days}_days_quantile, long>= {cfg.long_quantile:.3f}, short<= {cfg.short_quantile:.3f}"
     )
     lines.append(f"- annualization_days: {cfg.annualization_days}")
     lines.append(f"- average_sharpe_without_cost: {avg_sharpe_without_cost:.6f}")
     lines.append(f"- average_sharpe_with_cost: {avg_sharpe_with_cost:.6f}")
+    lines.append(f"- average_sharpe_without_cost_oos: {avg_sharpe_without_cost_oos:.6f}")
+    lines.append(f"- average_sharpe_with_cost_oos: {avg_sharpe_with_cost_oos:.6f}")
+    lines.append("")
+
+    lines.append(f"## Correlation matrix (maximal correlation is {cfg.max_pair_corr:.1f})")
+    lines.append("")
+    lines.append(f"- selected_factors_max_abs_correlation: {selected_max_abs_corr:.6f}")
+    lines.append("- full_matrix_file: factor_corr_matrix.csv")
+    lines.append("- selected_matrix_file: selected_factor_corr_matrix.csv")
     lines.append("")
 
     def append_table(title: str, frame: pd.DataFrame) -> None:
@@ -575,9 +631,38 @@ def _build_markdown_report(
             )
         lines.append("")
 
+    def append_corr_matrix(title: str, matrix: pd.DataFrame) -> None:
+        lines.append(f"## {title}")
+        lines.append("")
+        if matrix.empty:
+            lines.append("- correlation matrix unavailable")
+            lines.append("")
+            return
+
+        cols = [str(c) for c in matrix.columns]
+        lines.append("| factor | " + " | ".join(cols) + " |")
+        lines.append("|---|" + "|".join(["---"] * len(cols)) + "|")
+        for idx, row in matrix.iterrows():
+            vals: List[str] = []
+            for c in matrix.columns:
+                v = row[c]
+                vals.append("nan" if pd.isna(v) else f"{float(v):.3f}")
+            lines.append("| " + str(idx) + " | " + " | ".join(vals) + " |")
+        lines.append("")
+
     append_table("Top10 Sharpe (without cost)", top_sharpe)
     append_table("Top10 Annualized Return (without cost)", top_return)
     append_table("Top10 Information Ratio (without cost)", top_ir)
+    append_table(
+        "Top10 OOS Sharpe (without cost)",
+        top_oos_sharpe.assign(
+            sharpe_without_cost=top_oos_sharpe["sharpe_without_cost_oos"],
+            information_ratio_without_cost=top_oos_sharpe["information_ratio_without_cost_oos"],
+            annualized_return_without_cost=top_oos_sharpe["annualized_return_without_cost_oos"],
+            max_drawdown_without_cost=top_oos_sharpe["max_drawdown_without_cost_oos"],
+        ),
+    )
+    append_corr_matrix("Top10 OOS Sharpe (without cost) Correlation Matrix", top_oos_corr)
 
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -625,6 +710,10 @@ def run_factor_submission_pipeline(
             f"start_day={start_day}, end_day={end_day}, root={data_root_path}"
         )
 
+    is_days, oos_days, oos_start_day = _split_is_oos_days(all_days, cfg.oos_months)
+    if not oos_days:
+        raise ValueError("OOS split produced zero days. Please increase available date range.")
+
     min1_df = load_min1_days(data_root_path, "min1", all_days)
     factor_df = build_intraday_factor_frame(min1_df)
     factor_catalog_df = build_factor_catalog()
@@ -632,8 +721,13 @@ def run_factor_submission_pipeline(
     labeled_df, target_col = add_forward_returns(factor_df, cfg.target_horizon_minutes)
     eval_df = labeled_df.dropna(subset=["trade_day", "ts", "close", target_col]).reset_index(drop=True)
 
-    ic_df = compute_factor_ic(eval_df, FEATURE_COLUMNS, target_col, method=cfg.ic_method)
-    corr_df = compute_feature_correlation(eval_df, FEATURE_COLUMNS)
+    eval_df["trade_day"] = eval_df["trade_day"].astype(str)
+    is_eval_df = eval_df[eval_df["trade_day"].isin(set(is_days))].reset_index(drop=True)
+    validation_df = is_eval_df if not is_eval_df.empty else eval_df
+    validation_sample = "in_sample" if not is_eval_df.empty else "full_sample_fallback"
+
+    ic_df = compute_factor_ic(validation_df, FEATURE_COLUMNS, target_col, method=cfg.ic_method)
+    corr_df = compute_feature_correlation(validation_df, FEATURE_COLUMNS)
     high_corr_pairs_df = extract_high_corr_pairs(corr_df, threshold=cfg.max_pair_corr)
     selection = select_features_by_ic_and_corr(
         ic_df=ic_df,
@@ -748,37 +842,77 @@ def run_factor_submission_pipeline(
     benchmark_close = min1_df.groupby("trade_day", as_index=True)["close"].last()
     benchmark_daily_ret = benchmark_close.pct_change().reindex(all_days).fillna(0.0)
 
-    perf_rows = [
-        _compute_performance(
-            accumulators[f],
+    benchmark_daily_ret_oos = benchmark_daily_ret.reindex(oos_days).fillna(0.0)
+    perf_rows: List[Dict[str, object]] = []
+    for factor in features:
+        full_perf = _compute_performance(
+            accumulators[factor],
             all_days,
             benchmark_daily_ret,
             cfg.initial_capital,
             cfg.annualization_days,
         )
-        for f in features
-    ]
+        oos_perf = _compute_performance(
+            accumulators[factor],
+            oos_days,
+            benchmark_daily_ret_oos,
+            cfg.initial_capital,
+            cfg.annualization_days,
+        )
+
+        row = dict(full_perf)
+        row["total_return_with_cost_oos"] = oos_perf["total_return_with_cost"]
+        row["annualized_return_with_cost_oos"] = oos_perf["annualized_return_with_cost"]
+        row["annualized_vol_with_cost_oos"] = oos_perf["annualized_vol_with_cost"]
+        row["sharpe_with_cost_oos"] = oos_perf["sharpe_with_cost"]
+        row["information_ratio_with_cost_oos"] = oos_perf["information_ratio_with_cost"]
+        row["max_drawdown_with_cost_oos"] = oos_perf["max_drawdown_with_cost"]
+        row["total_return_without_cost_oos"] = oos_perf["total_return_without_cost"]
+        row["annualized_return_without_cost_oos"] = oos_perf["annualized_return_without_cost"]
+        row["annualized_vol_without_cost_oos"] = oos_perf["annualized_vol_without_cost"]
+        row["sharpe_without_cost_oos"] = oos_perf["sharpe_without_cost"]
+        row["information_ratio_without_cost_oos"] = oos_perf["information_ratio_without_cost"]
+        row["max_drawdown_without_cost_oos"] = oos_perf["max_drawdown_without_cost"]
+        row["trade_count_oos"] = oos_perf["trade_count"]
+        row["win_rate_oos"] = oos_perf["win_rate"]
+        row["profit_factor_oos"] = oos_perf["profit_factor"]
+        row["oos_day_count"] = float(len(oos_days))
+        perf_rows.append(row)
+
     perf_df = pd.DataFrame(perf_rows).sort_values("sharpe_without_cost", ascending=False).reset_index(drop=True)
 
     perf_df["rank_sharpe_without_cost"] = perf_df["sharpe_without_cost"].rank(method="dense", ascending=False)
     perf_df["rank_return_without_cost"] = perf_df["total_return_without_cost"].rank(method="dense", ascending=False)
     perf_df["rank_ir_without_cost"] = perf_df["information_ratio_without_cost"].rank(method="dense", ascending=False)
+    perf_df["rank_sharpe_without_cost_oos"] = perf_df["sharpe_without_cost_oos"].rank(method="dense", ascending=False)
+    perf_df["rank_return_without_cost_oos"] = perf_df["total_return_without_cost_oos"].rank(method="dense", ascending=False)
+    perf_df["rank_ir_without_cost_oos"] = perf_df["information_ratio_without_cost_oos"].rank(method="dense", ascending=False)
 
     avg_sharpe_without_cost = float(perf_df["sharpe_without_cost"].mean()) if not perf_df.empty else 0.0
     avg_sharpe_with_cost = float(perf_df["sharpe_with_cost"].mean()) if not perf_df.empty else 0.0
+    avg_sharpe_without_cost_oos = float(perf_df["sharpe_without_cost_oos"].mean()) if not perf_df.empty else 0.0
+    avg_sharpe_with_cost_oos = float(perf_df["sharpe_with_cost_oos"].mean()) if not perf_df.empty else 0.0
 
     group_df = (
         perf_df.groupby("group", as_index=False)
         .agg(
             factor_count=("factor", "count"),
             avg_sharpe_without_cost=("sharpe_without_cost", "mean"),
+            avg_sharpe_without_cost_oos=("sharpe_without_cost_oos", "mean"),
             avg_annualized_return_without_cost=("annualized_return_without_cost", "mean"),
+            avg_annualized_return_without_cost_oos=("annualized_return_without_cost_oos", "mean"),
             avg_ir_without_cost=("information_ratio_without_cost", "mean"),
+            avg_ir_without_cost_oos=("information_ratio_without_cost_oos", "mean"),
             avg_total_return_without_cost=("total_return_without_cost", "mean"),
+            avg_total_return_without_cost_oos=("total_return_without_cost_oos", "mean"),
             avg_sharpe_with_cost=("sharpe_with_cost", "mean"),
+            avg_sharpe_with_cost_oos=("sharpe_with_cost_oos", "mean"),
             avg_annualized_return_with_cost=("annualized_return_with_cost", "mean"),
+            avg_annualized_return_with_cost_oos=("annualized_return_with_cost_oos", "mean"),
             avg_ir_with_cost=("information_ratio_with_cost", "mean"),
+            avg_ir_with_cost_oos=("information_ratio_with_cost_oos", "mean"),
             avg_total_return_with_cost=("total_return_with_cost", "mean"),
+            avg_total_return_with_cost_oos=("total_return_with_cost_oos", "mean"),
             best_factor=("factor", "first"),
         )
         .sort_values("avg_sharpe_without_cost", ascending=False)
@@ -797,9 +931,15 @@ def run_factor_submission_pipeline(
         selected_corr_df.to_csv(out_dir / "selected_factor_corr_matrix.csv", index=True)
 
     perf_df.to_csv(out_dir / "factor_backtest_metrics.csv", index=False)
+    perf_df.sort_values("sharpe_without_cost_oos", ascending=False).to_csv(
+        out_dir / "factor_backtest_metrics_oos.csv", index=False
+    )
     group_df.to_csv(out_dir / "factor_group_metrics.csv", index=False)
     perf_df.sort_values("sharpe_without_cost", ascending=False).head(10).to_csv(
         out_dir / "top10_sharpe_without_cost.csv", index=False
+    )
+    perf_df.sort_values("sharpe_without_cost_oos", ascending=False).head(10).to_csv(
+        out_dir / "top10_sharpe_without_cost_oos.csv", index=False
     )
     perf_df.sort_values("annualized_return_without_cost", ascending=False).head(10).to_csv(
         out_dir / "top10_annualized_return_without_cost.csv", index=False
@@ -812,9 +952,15 @@ def run_factor_submission_pipeline(
         report_path=out_dir / "README_FINAL_RESULTS.md",
         run_id=run_id,
         all_days=all_days,
+        is_days=is_days,
+        oos_days=oos_days,
+        corr_df=corr_df,
         perf_df=perf_df,
         avg_sharpe_without_cost=avg_sharpe_without_cost,
         avg_sharpe_with_cost=avg_sharpe_with_cost,
+        avg_sharpe_without_cost_oos=avg_sharpe_without_cost_oos,
+        avg_sharpe_with_cost_oos=avg_sharpe_with_cost_oos,
+        selected_max_abs_corr=selected_max_abs_corr,
         cfg=cfg,
     )
 
@@ -829,6 +975,7 @@ def run_factor_submission_pipeline(
             "min_abs_ic": cfg.min_abs_ic,
             "min_selected_count": cfg.min_selected_count,
             "max_selected_count": cfg.max_selected_count,
+            "selection_sample": validation_sample,
         },
         "selected_max_abs_corr": selected_max_abs_corr,
     }
@@ -840,13 +987,28 @@ def run_factor_submission_pipeline(
         "start_day": all_days[0],
         "end_day": all_days[-1],
         "day_count": len(all_days),
+        "is_start_day": is_days[0] if is_days else None,
+        "is_end_day": is_days[-1] if is_days else None,
+        "is_day_count": len(is_days),
+        "oos_start_day": oos_start_day,
+        "oos_end_day": oos_days[-1] if oos_days else None,
+        "oos_day_count": len(oos_days),
+        "oos_months": cfg.oos_months,
         "factor_count": len(features),
         "avg_sharpe_without_cost": avg_sharpe_without_cost,
         "avg_sharpe_with_cost": avg_sharpe_with_cost,
+        "avg_sharpe_without_cost_oos": avg_sharpe_without_cost_oos,
+        "avg_sharpe_with_cost_oos": avg_sharpe_with_cost_oos,
         "avg_annualized_return_without_cost": float(perf_df["annualized_return_without_cost"].mean())
         if not perf_df.empty
         else 0.0,
         "avg_annualized_return_with_cost": float(perf_df["annualized_return_with_cost"].mean()) if not perf_df.empty else 0.0,
+        "avg_annualized_return_without_cost_oos": float(perf_df["annualized_return_without_cost_oos"].mean())
+        if not perf_df.empty
+        else 0.0,
+        "avg_annualized_return_with_cost_oos": float(perf_df["annualized_return_with_cost_oos"].mean())
+        if not perf_df.empty
+        else 0.0,
         "selected_factor_count": len(selected_features),
         "selected_max_abs_corr": selected_max_abs_corr,
         "ic_method": cfg.ic_method,
@@ -856,6 +1018,7 @@ def run_factor_submission_pipeline(
             "long_quantile": cfg.long_quantile,
             "short_quantile": cfg.short_quantile,
         },
+        "validation_sample": validation_sample,
         "annualization_days": cfg.annualization_days,
         "output_dir": str(out_dir),
         "files": {
@@ -866,8 +1029,10 @@ def run_factor_submission_pipeline(
             "factor_high_corr_pairs": str(out_dir / "factor_high_corr_pairs.csv"),
             "factor_selection": str(out_dir / "factor_selection.json"),
             "factor_backtest_metrics": str(out_dir / "factor_backtest_metrics.csv"),
+            "factor_backtest_metrics_oos": str(out_dir / "factor_backtest_metrics_oos.csv"),
             "factor_group_metrics": str(out_dir / "factor_group_metrics.csv"),
             "top10_sharpe_without_cost": str(out_dir / "top10_sharpe_without_cost.csv"),
+            "top10_sharpe_without_cost_oos": str(out_dir / "top10_sharpe_without_cost_oos.csv"),
             "top10_annualized_return_without_cost": str(out_dir / "top10_annualized_return_without_cost.csv"),
             "top10_information_ratio_without_cost": str(out_dir / "top10_information_ratio_without_cost.csv"),
             "readme_final_results": str(out_dir / "README_FINAL_RESULTS.md"),

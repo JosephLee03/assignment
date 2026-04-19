@@ -66,6 +66,7 @@ def main() -> None:
     parser.add_argument("--rolling-window-days", type=int, default=63, help="Rolling window in trading days (3 months ~= 63)")
     parser.add_argument("--long-quantile", type=float, default=0.995, help="Long threshold quantile")
     parser.add_argument("--short-quantile", type=float, default=0.005, help="Short threshold quantile")
+    parser.add_argument("--oos-months", type=int, default=3, help="Holdout latest N calendar months as OOS")
     parser.add_argument("--annualization-days", type=int, default=252, help="Annualization base days")
     parser.add_argument("--no-progress", action="store_true", help="Disable tqdm progress bar")
     args = parser.parse_args()
@@ -81,6 +82,7 @@ def main() -> None:
         rolling_window_days=int(args.rolling_window_days),
         long_quantile=float(args.long_quantile),
         short_quantile=float(args.short_quantile),
+        oos_months=int(args.oos_months),
         annualization_days=int(args.annualization_days),
     )
 
